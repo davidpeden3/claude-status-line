@@ -1,12 +1,14 @@
 # Claude Code Status Line
 
-A custom status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that displays model name, context window usage, and rate limit consumption as color-coded progress bars with reset countdowns.
+A custom status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that displays the current git branch, model name, context window usage, and rate limit consumption as color-coded progress bars with reset countdowns.
 
 ## What It Looks Like
 
 ```
-Opus 4.6 │ ctx: ████░░░░░░ (40%) │ 5h: ██░░░░░░░░ (20%) ↻3h12m  7d: █░░░░░░░░░ (10%) ↻4d6h
+ develop │ Opus 4.6 │ ctx: ████░░░░░░ (40%) │ 5h: ██░░░░░░░░ (20%) ↻3h12m  7d: █░░░░░░░░░ (10%) ↻4d6h
 ```
+
+The git branch segment is omitted when not inside a git repository.
 
 Bars change color based on usage:
 - **Green** — under 70%
@@ -18,8 +20,9 @@ Bars change color based on usage:
 
 - `bash`
 - `python3` (used to parse the JSON input from Claude Code)
+- `git` (used to detect the current branch)
 
-Both are available by default on macOS and most Linux distributions.
+All three are available by default on macOS and most Linux distributions.
 
 ## Setup
 
@@ -60,6 +63,7 @@ Claude Code pipes a JSON object to the status line command via stdin on each ren
 
 | Field | JSON Path | Description |
 |-------|-----------|-------------|
+| Git branch | `cwd` → `git branch --show-current` | Current branch (omitted outside a git repo) |
 | Model | `model.display_name` | The active model name |
 | Context | `context_window.used_percentage` | How much of the context window is consumed |
 | 5h rate limit | `rate_limits.five_hour.used_percentage` | Rolling 5-hour rate limit usage |
