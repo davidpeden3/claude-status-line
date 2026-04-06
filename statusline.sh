@@ -1,6 +1,17 @@
 #!/bin/bash
 JSON=$(cat)
 
+CWD=$(python3 -c "
+import sys, json
+data = json.loads(sys.stdin.read())
+print(data.get('cwd', ''))
+" <<< "$JSON")
+
+GIT_BRANCH=""
+if [ -n "$CWD" ]; then
+  GIT_BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null)
+fi
+
 MODEL=$(python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
@@ -80,7 +91,11 @@ make_bar() {
   echo -ne "${COLOR}${BAR}\033[0m (${PCT}%)"
 }
 
-OUTPUT="${MODEL}"
+OUTPUT=""
+if [ -n "$GIT_BRANCH" ]; then
+  OUTPUT="\033[36m ${GIT_BRANCH}\033[0m │ "
+fi
+OUTPUT="${OUTPUT}${MODEL}"
 
 if [ -n "$CTX_PCT" ]; then
   CTX_BAR=$(make_bar "$CTX_PCT")
