@@ -71,16 +71,120 @@ if val is not None:
             print(f'{m}m')
 " <<< "$JSON")
 
+# Fable weekly usage is not piped into the statusline JSON, so fetch it out of
+# band from the same endpoint /usage uses, caching to a file with a TTL. The
+# render never blocks on the network: it draws from cache and refreshes in the
+# background when the cache goes stale.
+FABLE_CACHE="$HOME/.claude/.fable-usage-cache.json"
+FABLE_LOCK="${FABLE_CACHE}.lock"
+FABLE_TTL=120
+
+fetch_fable_usage() {
+  python3 - "$FABLE_CACHE" <<'PYEOF'
+import subprocess, json, sys, urllib.request, datetime, os, tempfile
+cache = sys.argv[1]
+try:
+    raw = subprocess.check_output(
+        ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+        text=True, stderr=subprocess.DEVNULL)
+    token = json.loads(raw)["claudeAiOauth"]["accessToken"]
+    request = urllib.request.Request(
+        "https://api.anthropic.com/api/oauth/usage",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "Content-Type": "application/json",
+        })
+    with urllib.request.urlopen(request, timeout=10) as response:
+        body = json.loads(response.read())
+    fable = next(
+        (limit for limit in (body.get("limits") or [])
+         if limit.get("kind") == "weekly_scoped"
+         and ((limit.get("scope") or {}).get("model") or {}).get("display_name") == "Fable"),
+        None)
+    if fable is None:
+        sys.exit(0)
+    resets_at = fable.get("resets_at")
+    epoch = datetime.datetime.fromisoformat(resets_at).timestamp() if resets_at else None
+    payload = {
+        "percent": fable.get("percent"),
+        "resets_at": epoch,
+        "fetched_at": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+    }
+    handle, temp = tempfile.mkstemp(dir=os.path.dirname(cache))
+    with os.fdopen(handle, "w") as out:
+        json.dump(payload, out)
+    os.replace(temp, cache)
+except Exception:
+    sys.exit(0)
+PYEOF
+}
+
+FABLE=""
+FABLE_RESET=""
+FABLE_AGE=999999
+if [ -f "$FABLE_CACHE" ]; then
+  FABLE_DATA=$(python3 -c "
+import json, time, sys
+try:
+    d = json.load(open('$FABLE_CACHE'))
+except Exception:
+    print('||999999'); sys.exit()
+pct = d.get('percent')
+ra = d.get('resets_at')
+fa = d.get('fetched_at', 0)
+pct_s = str(int(round(pct))) if pct is not None else ''
+if ra is not None:
+    diff = max(0, int(ra - time.time()))
+    days, rem = diff // 86400, diff % 86400
+    h = rem // 3600
+    if days > 0:
+        reset_s = f'{days}d{h}h'
+    else:
+        m = (rem % 3600) // 60
+        reset_s = f'{h}h{m:02d}m' if h > 0 else f'{m}m'
+else:
+    reset_s = ''
+age = int(time.time() - fa) if fa else 999999
+print(f'{pct_s}|{reset_s}|{age}')
+" 2>/dev/null)
+  FABLE="${FABLE_DATA%%|*}"
+  FABLE_REST="${FABLE_DATA#*|}"
+  FABLE_RESET="${FABLE_REST%%|*}"
+  FABLE_AGE="${FABLE_REST##*|}"
+fi
+
+if [ -z "$FABLE_AGE" ]; then
+  FABLE_AGE=999999
+fi
+if [ "$FABLE_AGE" -ge "$FABLE_TTL" ]; then
+  REFRESH=1
+  if [ -f "$FABLE_LOCK" ]; then
+    LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$FABLE_LOCK" 2>/dev/null || echo 0) ))
+    if [ "$LOCK_AGE" -lt 30 ]; then
+      REFRESH=0
+    fi
+  fi
+  if [ "$REFRESH" -eq 1 ]; then
+    touch "$FABLE_LOCK"
+    ( fetch_fable_usage; rm -f "$FABLE_LOCK" ) >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+  fi
+fi
+
 make_bar() {
   local PCT=$1
+  local YELLOW=${2:-70}
+  local ORANGE=${3:-80}
+  local RED=${4:-90}
   local FILLED=$(( PCT / 10 ))
   local EMPTY=$(( 10 - FILLED ))
   local COLOR
-  if [ "$PCT" -ge 90 ]; then
+  if [ "$PCT" -ge "$RED" ]; then
     COLOR="\033[31m"
-  elif [ "$PCT" -ge 80 ]; then
+  elif [ "$PCT" -ge "$ORANGE" ]; then
     COLOR="\033[38;5;208m"
-  elif [ "$PCT" -ge 70 ]; then
+  elif [ "$PCT" -ge "$YELLOW" ]; then
     COLOR="\033[33m"
   else
     COLOR="\033[32m"
@@ -120,6 +224,18 @@ if [ -n "$SEVEN_D" ]; then
     RATE_PARTS="${RATE_PARTS}  ${WEEK_PART}"
   else
     RATE_PARTS="${WEEK_PART}"
+  fi
+fi
+if [ -n "$FABLE" ]; then
+  FABLE_BAR=$(make_bar "$FABLE" 30 40 45)
+  FABLE_PART="Fable: ${FABLE_BAR}"
+  if [ -n "$FABLE_RESET" ]; then
+    FABLE_PART="${FABLE_PART} ↻${FABLE_RESET}"
+  fi
+  if [ -n "$RATE_PARTS" ]; then
+    RATE_PARTS="${RATE_PARTS}  ${FABLE_PART}"
+  else
+    RATE_PARTS="${FABLE_PART}"
   fi
 fi
 if [ -n "$RATE_PARTS" ]; then
