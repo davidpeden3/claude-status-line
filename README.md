@@ -16,7 +16,7 @@ Bars change color based on usage:
 - **Orange** — 80–89%
 - **Red** — 90%+
 
-The `Fable:` bar uses tighter thresholds — **yellow at 30%, orange at 40%, red at 45%** — because a Fable weekly allotment caps at 50% before spilling over to metered API/usage-credit consumption, so the bar should read as "hot" much earlier.
+Every bar uses the same thresholds, including `Fable:` — a Fable weekly allotment runs the full 100%, exactly like the `7d:` limit.
 
 ## Prerequisites
 
