@@ -227,7 +227,7 @@ if [ -n "$SEVEN_D" ]; then
   fi
 fi
 if [ -n "$FABLE" ]; then
-  FABLE_BAR=$(make_bar "$FABLE" 30 40 45)
+  FABLE_BAR=$(make_bar "$FABLE")
   FABLE_PART="Fable: ${FABLE_BAR}"
   if [ -n "$FABLE_RESET" ]; then
     FABLE_PART="${FABLE_PART} ↻${FABLE_RESET}"
